@@ -1,5 +1,7 @@
 #!/bin/sh
 
+rs_meta=${2:-./.rs_meta}
+
 function has_version() {
     echo $1 | sed -n 's/\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)/\1/p'
 }
@@ -41,7 +43,8 @@ if [ ! -z "$has_pending_changes" ]; then
     exit 1
 fi
 
-release_branch="release-v${version}"
+echo rat-scratch get --meta=${rs_meta} name
+release_branch="release-$(rat-scratch get --meta=${rs_meta} name)-v${version}"
 has_release_branch=$(git rev-parse --verify $release_branch 2> /dev/null)
 
 if [ "$has_release_branch" ]; then
@@ -49,22 +52,33 @@ if [ "$has_release_branch" ]; then
     exit 1
 fi
 
-git checkout main
-git pull origin
+if [ -z "RAT_SCRATCH_DRY_RUN" ]; then
+    git checkout main
+    git pull origin
+fi
 
 set -e
 
 git checkout -b $release_branch
 
-update_rsmeta_version "./.rsmeta" $version
-update_packagejson_version "./package.json" $version
+if [ ! "${rs_meta}" = "./package.json" ]; then
+    update_rsmeta_version "${rs_meta}" $version
+fi
+
+if [ "${rs_meta}" = "./.rsmeta" ] || [ "${rs_meta}" = "./package.json" ]; then
+    update_packagejson_version "./package.json" $version
+fi
 
 npm ci
 
 git commit -m "Bump version to ${version}."
-git push origin
 
-github_pr_url=$(gh pr create --fill)
+if [ -z "RAT_SCRATCH_DRY_RUN" ]; then
+    git push origin
+    github_pr_url=$(gh pr create --fill)
+else
+    github_pr_url=$(gh repo view --json url --template '{{.url}}')
+fi
 
 set +e
 
